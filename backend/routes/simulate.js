@@ -1,4 +1,4 @@
-// routes/simulate.js - Enhanced API routes
+// routes/simulate.js - Enhanced API routes with fixed route patterns
 const express = require('express');
 const router = express.Router();
 const {
@@ -128,11 +128,17 @@ router.post('/traffic/:nodeId', (req, res) => {
     }
 });
 
-// Update link capacity
-router.post('/link/:from/:to/capacity', (req, res) => {
+// FIXED: Update link capacity - changed route pattern to avoid path-to-regexp issues
+router.post('/link-capacity', (req, res) => {
     try {
-        const { from, to } = req.params;
-        const { capacity } = req.body;
+        const { from, to, capacity } = req.body;
+
+        if (!from || !to) {
+            return res.status(400).json({
+                success: false,
+                error: 'Both from and to nodes are required'
+            });
+        }
 
         if (!capacity || capacity <= 0) {
             return res.status(400).json({
@@ -152,6 +158,40 @@ router.post('/link/:from/:to/capacity', (req, res) => {
             res.status(404).json({
                 success: false,
                 error: `Link from ${from} to ${to} not found`
+            });
+        }
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Alternative: Keep the original route but with proper parameter encoding
+router.put('/link/:fromNode/:toNode', (req, res) => {
+    try {
+        const { fromNode, toNode } = req.params;
+        const { capacity } = req.body;
+
+        if (!capacity || capacity <= 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'Valid capacity (> 0) is required'
+            });
+        }
+
+        const updated = updateLinkCapacity(fromNode, toNode, parseInt(capacity));
+
+        if (updated) {
+            res.json({
+                success: true,
+                message: `Link capacity updated from ${fromNode} to ${toNode}: ${capacity} packets/second`
+            });
+        } else {
+            res.status(404).json({
+                success: false,
+                error: `Link from ${fromNode} to ${toNode} not found`
             });
         }
     } catch (error) {
