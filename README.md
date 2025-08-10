@@ -1,5 +1,7 @@
 This application simulates how data packets flow through a telecommunication network - like the internet, corporate networks, or mobile networks. It helps understand network behavior, congestion, and performance.
+
 Key Concepts
+
 1. Network Topology
 
 Nodes (A, B, C, D, E): These represent network devices like routers, switches, or computers
@@ -26,13 +28,19 @@ clone it to your local repository
 
 
 To run backend 
+
 cd backend 
+
 npm install 
+
 npm start
 
 
 
 To run frontend
+
 cd frontend
+
 npm install 
+
 npm run dev 
