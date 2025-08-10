@@ -8,35 +8,60 @@ const NetworkSimulator = () => {
     const [selectedNode, setSelectedNode] = useState(null);
     const [selectedLink, setSelectedLink] = useState(null);
     const [loading, setLoading] = useState(false);
+    const [connectionError, setConnectionError] = useState(false);
 
-    // API base URL - adjust for your backend
-    const API_BASE = 'http://localhost:3001/api/simulate';
+    // FIXED: Backend runs on port 5000, not 3001
+    const API_BASE = 'http://localhost:5000/api/simulate';
 
     // Fetch network statistics
     const fetchStats = useCallback(async () => {
         try {
+            setConnectionError(false);
             const response = await fetch(`${API_BASE}/stats`);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
             const result = await response.json();
             if (result.success) {
                 setNetworkData(result.data);
+            } else {
+                console.error('API returned error:', result.error);
             }
         } catch (error) {
             console.error('Failed to fetch stats:', error);
+            setConnectionError(true);
+            setNetworkData(null);
         }
     }, []);
 
-    // Simulation controls
+    // Simulation controls with better error handling
     const startSimulation = async () => {
         setLoading(true);
         try {
-            const response = await fetch(`${API_BASE}/start`, { method: 'POST' });
+            setConnectionError(false);
+            const response = await fetch(`${API_BASE}/start`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
             const result = await response.json();
             if (result.success) {
                 setIsSimulating(true);
                 setAutoRun(true);
+                // Fetch initial stats after starting
+                await fetchStats();
+            } else {
+                console.error('Failed to start simulation:', result.error);
             }
         } catch (error) {
             console.error('Failed to start simulation:', error);
+            setConnectionError(true);
         } finally {
             setLoading(false);
         }
@@ -45,14 +70,28 @@ const NetworkSimulator = () => {
     const pauseSimulation = async () => {
         setLoading(true);
         try {
-            const response = await fetch(`${API_BASE}/pause`, { method: 'POST' });
+            setConnectionError(false);
+            const response = await fetch(`${API_BASE}/pause`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
             const result = await response.json();
             if (result.success) {
                 setIsSimulating(false);
                 setAutoRun(false);
+            } else {
+                console.error('Failed to pause simulation:', result.error);
             }
         } catch (error) {
             console.error('Failed to pause simulation:', error);
+            setConnectionError(true);
         } finally {
             setLoading(false);
         }
@@ -61,15 +100,29 @@ const NetworkSimulator = () => {
     const resetSimulation = async () => {
         setLoading(true);
         try {
-            const response = await fetch(`${API_BASE}/reset`, { method: 'POST' });
+            setConnectionError(false);
+            const response = await fetch(`${API_BASE}/reset`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
             const result = await response.json();
             if (result.success) {
                 setIsSimulating(false);
                 setAutoRun(false);
                 await fetchStats();
+            } else {
+                console.error('Failed to reset simulation:', result.error);
             }
         } catch (error) {
             console.error('Failed to reset simulation:', error);
+            setConnectionError(true);
         } finally {
             setLoading(false);
         }
@@ -77,47 +130,115 @@ const NetworkSimulator = () => {
 
     const runTick = async () => {
         try {
-            const response = await fetch(`${API_BASE}/tick`, { method: 'POST' });
+            setConnectionError(false);
+            const response = await fetch(`${API_BASE}/tick`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
             const result = await response.json();
             if (result.success) {
                 setNetworkData(result.data);
+            } else {
+                console.error('Failed to run tick:', result.error);
             }
         } catch (error) {
             console.error('Failed to run tick:', error);
+            setConnectionError(true);
         }
     };
 
     const advanceTime = async () => {
         try {
-            const response = await fetch(`${API_BASE}/advance-time`, { method: 'POST' });
+            setConnectionError(false);
+            const response = await fetch(`${API_BASE}/advance-time`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
             const result = await response.json();
             if (result.success) {
                 await fetchStats();
+            } else {
+                console.error('Failed to advance time:', result.error);
             }
         } catch (error) {
             console.error('Failed to advance time:', error);
+            setConnectionError(true);
         }
     };
 
     // Auto-run simulation
     useEffect(() => {
         let interval;
-        if (autoRun && isSimulating) {
+        if (autoRun && isSimulating && !connectionError) {
             interval = setInterval(() => {
                 runTick();
             }, 2000); // Run every 2 seconds
         }
         return () => clearInterval(interval);
-    }, [autoRun, isSimulating]);
+    }, [autoRun, isSimulating, connectionError]);
 
-    // Initial data fetch
+    // Initial data fetch with retry mechanism
     useEffect(() => {
-        fetchStats();
+        let retryCount = 0;
+        const maxRetries = 3;
+
+        const initialFetch = async () => {
+            try {
+                await fetchStats();
+            } catch (error) {
+                if (retryCount < maxRetries) {
+                    retryCount++;
+                    setTimeout(initialFetch, 2000); // Retry after 2 seconds
+                }
+            }
+        };
+
+        initialFetch();
     }, [fetchStats]);
+
+    // Connection error banner
+    const ConnectionErrorBanner = () => (
+        <div className="bg-red-600 text-white p-4 rounded-lg mb-6 flex items-center justify-between">
+            <div>
+                <h3 className="font-semibold">Backend Connection Error</h3>
+                <p className="text-sm mt-1">
+                    Cannot connect to the backend server at {API_BASE}.
+                    Make sure your backend is running on port 5000.
+                </p>
+            </div>
+            <button
+                onClick={fetchStats}
+                className="bg-red-700 hover:bg-red-800 px-4 py-2 rounded-lg text-sm"
+                disabled={loading}
+            >
+                Retry
+            </button>
+        </div>
+    );
 
     // Network visualization component
     const NetworkGraph = () => {
-        if (!networkData) return <div className="flex items-center justify-center h-64 text-gray-500">Loading network...</div>;
+        if (connectionError || !networkData) {
+            return (
+                <div className="flex items-center justify-center h-64 text-gray-500">
+                    {connectionError ? 'Backend connection failed' : 'Loading network...'}
+                </div>
+            );
+        }
 
         const nodePositions = {
             A: { x: 100, y: 100 },
@@ -266,22 +387,31 @@ const NetworkSimulator = () => {
                     <p className="text-gray-400">Real-time telecommunication network simulation</p>
                 </div>
 
+                {/* Connection Error Banner */}
+                {connectionError && <ConnectionErrorBanner />}
+
                 {/* Control Panel */}
                 <div className="bg-gray-800 rounded-lg p-4 mb-6">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4">
                             <button
                                 onClick={isSimulating ? pauseSimulation : startSimulation}
-                                disabled={loading}
+                                disabled={loading || connectionError}
                                 className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 px-4 py-2 rounded-lg transition-colors"
                             >
-                                {isSimulating ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                                {loading ? (
+                                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                ) : isSimulating ? (
+                                    <Pause className="w-4 h-4" />
+                                ) : (
+                                    <Play className="w-4 h-4" />
+                                )}
                                 {isSimulating ? 'Pause' : 'Start'}
                             </button>
 
                             <button
                                 onClick={resetSimulation}
-                                disabled={loading}
+                                disabled={loading || connectionError}
                                 className="flex items-center gap-2 bg-gray-600 hover:bg-gray-700 disabled:bg-gray-700 px-4 py-2 rounded-lg transition-colors"
                             >
                                 <RotateCcw className="w-4 h-4" />
@@ -290,7 +420,7 @@ const NetworkSimulator = () => {
 
                             <button
                                 onClick={runTick}
-                                disabled={loading || autoRun}
+                                disabled={loading || autoRun || connectionError}
                                 className="flex items-center gap-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 px-4 py-2 rounded-lg transition-colors"
                             >
                                 <Activity className="w-4 h-4" />
@@ -299,7 +429,7 @@ const NetworkSimulator = () => {
 
                             <button
                                 onClick={advanceTime}
-                                disabled={loading}
+                                disabled={loading || connectionError}
                                 className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 px-4 py-2 rounded-lg transition-colors"
                             >
                                 <Clock className="w-4 h-4" />
@@ -311,8 +441,8 @@ const NetworkSimulator = () => {
                             <div className="flex items-center gap-4 text-sm">
                                 <span>Time: {networkData.currentTime}</span>
                                 <span>Step: {networkData.simulationStep}</span>
-                                <span className={`px-2 py-1 rounded-full text-xs ${isSimulating ? 'bg-green-600' : 'bg-gray-600'}`}>
-                                    {isSimulating ? 'Running' : 'Stopped'}
+                                <span className={`px-2 py-1 rounded-full text-xs ${connectionError ? 'bg-red-600' : isSimulating ? 'bg-green-600' : 'bg-gray-600'}`}>
+                                    {connectionError ? 'Disconnected' : isSimulating ? 'Running' : 'Stopped'}
                                 </span>
                             </div>
                         )}
@@ -330,7 +460,7 @@ const NetworkSimulator = () => {
                     {/* Statistics Sidebar */}
                     <div className="space-y-6">
                         {/* Network Summary */}
-                        {networkData?.summary && (
+                        {networkData?.summary && !connectionError && (
                             <StatsPanel title="Network Summary" icon={Activity}>
                                 <div className="space-y-3">
                                     <div className="flex justify-between">
@@ -355,8 +485,26 @@ const NetworkSimulator = () => {
                             </StatsPanel>
                         )}
 
+                        {/* Connection Instructions */}
+                        {connectionError && (
+                            <StatsPanel title="Backend Setup" icon={Settings}>
+                                <div className="space-y-3 text-sm">
+                                    <p className="text-gray-300">To fix the connection issue:</p>
+                                    <ol className="list-decimal list-inside space-y-2 text-gray-400">
+                                        <li>Navigate to your backend directory</li>
+                                        <li>Install dependencies: <code className="bg-gray-700 px-1 rounded">npm install</code></li>
+                                        <li>Start the server: <code className="bg-gray-700 px-1 rounded">npm start</code></li>
+                                        <li>Verify it's running on port 5000</li>
+                                    </ol>
+                                    <div className="mt-3 p-2 bg-gray-700 rounded text-xs">
+                                        Expected URL: <code>http://localhost:5000</code>
+                                    </div>
+                                </div>
+                            </StatsPanel>
+                        )}
+
                         {/* Node Details */}
-                        {selectedNode && (
+                        {selectedNode && !connectionError && (
                             <StatsPanel title={`Node ${selectedNode.id} Details`} icon={Settings}>
                                 <div className="space-y-3">
                                     <div className="flex justify-between">
@@ -376,7 +524,7 @@ const NetworkSimulator = () => {
                         )}
 
                         {/* Link Details */}
-                        {selectedLink && (
+                        {selectedLink && !connectionError && (
                             <StatsPanel title={`Link ${selectedLink.from}→${selectedLink.to} Details`} icon={Network}>
                                 <div className="space-y-3">
                                     <div className="flex justify-between">
@@ -410,11 +558,11 @@ const NetworkSimulator = () => {
                         )}
 
                         {/* Recent Packets */}
-                        {networkData?.packets && (
+                        {networkData?.packets && !connectionError && (
                             <StatsPanel title="Recent Packets" icon={Activity}>
                                 <div className="space-y-2 max-h-40 overflow-y-auto">
                                     {networkData.packets.slice(-10).map((packet, index) => (
-                                        <div key={packet.id} className="text-xs bg-gray-700 rounded p-2">
+                                        <div key={packet.id || index} className="text-xs bg-gray-700 rounded p-2">
                                             <div className="flex justify-between">
                                                 <span>{packet.source} → {packet.destination}</span>
                                                 <span className={packet.transmitted ? 'text-green-400' : 'text-red-400'}>
